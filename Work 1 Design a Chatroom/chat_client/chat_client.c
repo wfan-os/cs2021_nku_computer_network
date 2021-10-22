@@ -181,9 +181,9 @@ int main()
 			//现在，我们清屏开始正式聊天
 			system("cls");
 			print_logo();
+			printf("\n> ");
 		}
 
-		printf("\n> ");
 		memset(input_buffer, 0, sizeof(input_buffer));
 		gets(input_buffer);
 
@@ -329,7 +329,8 @@ DWORD WINAPI recv_thread_fn(void* arg) {
 			time_t t = ntohl(mbuf->head.timep);
 			struct tm* tp = localtime(&t);
 			strftime(s, 100, "%H:%M:%S", tp);
-			printf("%s %s\n", s, mbuf->content);
+			printf("\n%s %s\n", s, mbuf->content);
+			printf("\n> ");
 		}
 		else if (reply_command == CMD_SERVER_CLOSE) {
 			get_time();
