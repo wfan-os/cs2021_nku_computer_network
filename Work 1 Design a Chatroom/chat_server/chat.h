@@ -9,6 +9,8 @@
 #define CONTENT_MAX_LENGTH 4096
 //名字最长限制
 #define USERNAME_MAX_LENGTH  48
+//listen等待队列的最大长度
+#define BACKLOG 10
 
 
 struct msg_header
@@ -17,7 +19,7 @@ struct msg_header
 	int command;
 	int command_code;
 	time_t timep;
-	unsigned int content_length;
+	int content_length;
 };
 
 struct exchg_msg
@@ -29,7 +31,7 @@ struct exchg_msg
 
 /*********************************指令*************************************/
 //用户指令
-#define	CMD_CLIENT_REGISTER 100		 //请求注册用户
+#define	CMD_CLIENT_REGIST   100		 //请求注册用户
 #define CMD_CLIENT_DEPART	101		 //请求离开服务器
 #define CMD_CLIENT_SEND		102		 //向服务器发送消息
 

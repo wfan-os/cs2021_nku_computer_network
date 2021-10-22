@@ -3,8 +3,8 @@
 
 #include "chat.h"
 #include <stdio.h>
+#include <winsock.h>
 #include <string.h>
-#include <assert.h>
 
 #define INFO	"[ INFO  ]"
 #define ERR		"[ ERROR ]"
@@ -19,7 +19,6 @@ HANDLE recv_thread;
 
 int send_msg_to_server(SOCKET sock, char* msg, int command, int command_code);
 DWORD WINAPI recv_thread_fn(void* arg);
-int test_input_error(char* user_command, char* parameter);
 void print_logo(void);
 void get_time(void);
 
@@ -50,7 +49,7 @@ int main()
 			//获取IP和端口
 			do {
 				printf("Input the IP of server:");
-				memset(input_buffer, '\0', sizeof(input_buffer));
+				memset(input_buffer, 0, sizeof(input_buffer));
 				gets(input_buffer);
 				server_ip = inet_addr(input_buffer);
 				do {
@@ -71,7 +70,6 @@ int main()
 			// WSAStartup
 			WSADATA wsaData;
 			if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-				get_time();
 				printf("%s Failed WSAStartup() with error: %d\n", ERR, WSAGetLastError());
 				perror("WSAStartup");
 				return 1;
@@ -84,7 +82,6 @@ int main()
 			if (g_sock == INVALID_SOCKET) {
 				get_time();
 				printf("%s Failed main socket creation: %d\n", ERR, WSAGetLastError());
-				perror("Socket Create");
 				return 2;
 			}
 			get_time();
@@ -100,19 +97,17 @@ int main()
 				is_connected = 0;
 				get_time();
 				printf("%s Connection failed: %d\n", ERR, WSAGetLastError());
-				perror("connect\n");
+				perror("connect failure");
 				if (g_sock != INVALID_SOCKET) {
 					closesocket(g_sock);
 					g_sock = INVALID_SOCKET;
 				}
+				return 0;
 			}
 			else {
-			get_time();
-			printf("%s Connected!\n", OK);
+				get_time();
+				printf("%s Server connected successfully!\n", INFO);
 			}
-
-			get_time();
-			printf("%s Server connected successfully!\n", INFO);
 
 			//注册用户，如果输入用户名不合格，抑或是服务器那边不通过就会一直循环
 			while (1) {
@@ -154,7 +149,11 @@ int main()
 					int reply_command_code = ntohl(mbuf->head.command_code);
 					if (reply_command_code == ERR_JOIN_DUP_NAME) {
 						get_time();
-						printf("%s connection failure - your name has been used, pls change your name.\n", ERR);
+						printf("%s Connection failure - your name has been used, pls change your name.\n", ERR);
+					}
+					else if (reply_command_code == ERR_JOIN_ROOM_FULL) {
+						get_time();
+						printf("%s Connection failure - the room is full now, pls register later.\n", ERR);
 					}
 					else {
 						get_time();
@@ -162,7 +161,6 @@ int main()
 						perror("recv from srv - an unknow error\n");
 					}
 				}
-
 			}
 
 			//创建接受消息的线程
@@ -197,7 +195,7 @@ int main()
 		//获取命令参数
 		user_command_parameter = strtok(NULL, "\n");
 
-		if (_stricmp(user_command, "CLEAR") == 0) { /* clear clears the command window */
+		if (_stricmp(user_command, "CLEAR") == 0) {
 			system("cls");
 			print_logo();
 		}
@@ -221,11 +219,7 @@ int main()
 
 		else if (_stricmp(user_command, "DEPART") == 0) {
 			if (is_connected) {
-
-				/*
-				...........此段代码尚待填充，目的是终结线程...........
-				*/
-
+				//告诉服务器用户离开了
 				if (send_msg_to_server(g_sock, NULL, CMD_CLIENT_DEPART, 0) != 0) {
 					get_time();
 					printf("%s Depart fails!\n", ERR);
@@ -243,6 +237,9 @@ int main()
 				printf("%s You have left the chat room.\n", INFO);
 				get_time();
 				printf("%s Disconnected.\n", INFO);
+
+				system("pause");
+				return 0;
 			}
 			else {
 				get_time();
@@ -255,6 +252,8 @@ int main()
 			printf("%s Undifined command. Please use the told commands.\n", ERR);
 		}
 	}
+
+	WSACleanup();
 	return 0;
 }
 
@@ -262,7 +261,12 @@ int main()
 int send_msg_to_server(SOCKET sock, char* msg, int command, int command_code) {
 	struct exchg_msg* mbuf = NULL;
 	time_t t = time(NULL);
-	int msg_len = strlen(msg);
+	int msg_len = 0;
+
+	if (msg) {
+		msg_len = strlen(msg);
+		msg_len++;
+	}
 
 	if (msg_len < 0) {
 		perror("invalid message to send\n");
@@ -275,35 +279,20 @@ int send_msg_to_server(SOCKET sock, char* msg, int command, int command_code) {
 	mbuf->head.magic = htonl(MAGIC_WXF);
 	mbuf->head.command = htonl(command);
 	mbuf->head.command_code = htonl(command_code);
-	mbuf->head.timep = t;
+	mbuf->head.timep = htonl(t);
 
 	if (command == CMD_CLIENT_DEPART) {
-		//用户发出任何消息，要在本地显示出来
-		do {
-			char s[100];
-			struct tm* tp = localtime(&t);
-			strftime(s, 100, "%H:%M:%S", tp);
-			printf("%s\t Departing from the server!\n", s);
-		} while (0);
 		//DEPART命令不需要任何内容
 		mbuf->head.content_length = htonl(0);
 	}
 	else if (command == CMD_CLIENT_REGISTER || command == CMD_CLIENT_SEND) {
 		//REGISTER时内容存储 (用户名)
 		//SEND时内容存储 (用户名：Message)
-		memcpy(mbuf->content, msg, msg_len);
-		mbuf->head.content_length = htonl(msg_len);
-
-		//用户发出任何消息，要在本地显示出来
-		do {
-			char s[100];
-			struct tm* tp = localtime(&t);
-			strftime(s, 100, "%H:%M:%S", tp);
-			printf("%s\t %s\n", s, msg);
-		} while (0);
+		strcpy(mbuf->content, msg);
+		mbuf->head.content_length = htonl(msg_len + 1);
 	}
 
-	if (send(sock, (char*) mbuf, sizeof(struct exchg_msg) + msg_len, 0) == SOCKET_ERROR) {
+	if (send(sock, (char*) mbuf, sizeof(struct exchg_msg) + msg_len + 1, 0) == SOCKET_ERROR) {
 		perror("send\n");
 		printf("send %s with error: %d\n", (char*)mbuf, WSAGetLastError());
 		return -1;
@@ -327,8 +316,8 @@ DWORD WINAPI recv_thread_fn(void* arg) {
 
 		if (recv(g_sock, (char*)mbuf, sizeof(struct exchg_msg) + CONTENT_MAX_LENGTH, 0) == SOCKET_ERROR) {
 			get_time();
-			printf("%s Receive Message Error: %d\n", ERR, WSAGetLastError());
-			perror("receive\n");
+			printf("%s You have disconnected with the server: %d\n", INFO);
+			return 0;
 		}
 
 		reply_command = ntohl(mbuf->head.command);
@@ -336,7 +325,11 @@ DWORD WINAPI recv_thread_fn(void* arg) {
 		content_len = ntohl(mbuf->head.content_length);
 
 		if (reply_command == CMD_SERVER_BROADCAST) {
-			printf("%s", mbuf->content);
+			char s[100];
+			time_t t = ntohl(mbuf->head.timep);
+			struct tm* tp = localtime(&t);
+			strftime(s, 100, "%H:%M:%S", tp);
+			printf("%s %s\n", s, mbuf->content);
 		}
 		else if (reply_command == CMD_SERVER_CLOSE) {
 			get_time();
@@ -369,7 +362,6 @@ DWORD WINAPI recv_thread_fn(void* arg) {
 
 
 void print_logo(void) {
-	system("cls");
 	printf("_______________________________________________________________________________________________________________\n\n");
 	printf("   /$$$$$$  /$$                   /$$           /$$$$$$$                                   \n");
 	printf("  /$$__  $$| $$                  | $$          | $$__  $$                                  \n");
